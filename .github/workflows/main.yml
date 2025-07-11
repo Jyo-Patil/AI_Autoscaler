@@ -12,6 +12,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+         terraform_version: latest 
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
