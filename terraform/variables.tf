@@ -5,8 +5,3 @@ variable "aws_region" {
 variable "instance_type" {
   default = "t2.micro"
 }
-
-variable "subnet_ids" {
-  type = list(string)
-  description = "List of subnet IDs where to launch instances"
-}
