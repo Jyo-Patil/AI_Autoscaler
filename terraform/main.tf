@@ -152,14 +152,13 @@ resource "aws_cloudwatch_event_rule" "ten_minute_schedule" {
 
 # Lambda Function
 resource "aws_lambda_function" "predictive_scaler" {
-  filename         = "../lambda/lambda.zip"
   function_name    = "predictive_scaler"
   role             = aws_iam_role.lambda_role.arn
   handler          = "predictive_scaler.lambda_handler"
   runtime          = "python3.10"
   timeout          = 60
-  source_code_hash = filebase64sha256("../lambda/lambda.zip")
-
+  source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
+  filename         = "${path.module}/../lambda.zip"
   environment {
     variables = {
       ASG_NAME = aws_autoscaling_group.webapp_asg.name
