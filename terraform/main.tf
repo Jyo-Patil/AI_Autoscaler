@@ -150,8 +150,40 @@ resource "aws_cloudwatch_event_rule" "ten_minute_schedule" {
   schedule_expression = "rate(10 minutes)"
 }
 
-# Lambda Function
+resource "aws_s3_bucket" "lambda_bucket" {
+  bucket = "your-unique-lambda-code-bucket"
+  force_destroy = true
+}
+
+resource "aws_s3_object" "lambda_zip" {
+  bucket = aws_s3_bucket.lambda_bucket.id
+  key    = "lambda.zip"
+  source = "${path.module}/../lambda.zip"
+  etag   = filemd5("${path.module}/../lambda.zip")
+}
+
 resource "aws_lambda_function" "predictive_scaler" {
+  function_name = "predictive_scaler"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "predictive_scaler.lambda_handler"
+  runtime       = "python3.10"
+  timeout       = 60
+
+  s3_bucket = aws_s3_bucket.lambda_bucket.id
+  s3_key    = aws_s3_object.lambda_zip.key
+
+  source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
+
+  environment {
+    variables = {
+      ASG_NAME = aws_autoscaling_group.webapp_asg.name
+    }
+  }
+}
+
+
+# Lambda Function
+/*resource "aws_lambda_function" "predictive_scaler" {
   function_name    = "predictive_scaler"
   role             = aws_iam_role.lambda_role.arn
   handler          = "predictive_scaler.lambda_handler"
@@ -164,7 +196,7 @@ resource "aws_lambda_function" "predictive_scaler" {
       ASG_NAME = aws_autoscaling_group.webapp_asg.name
     }
   }
-}
+}*/
 
 # Lambda Permissions
 resource "aws_lambda_permission" "allow_eventbridge" {
