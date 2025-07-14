@@ -26,7 +26,7 @@ jobs:
         run: |
           cd lambda
           python -m venv penv
-          source penv/Scripts/Activate
+          source penv/bin/activate
           pip install -r requirements.txt
           zip -r ../lambda.zip .
 
