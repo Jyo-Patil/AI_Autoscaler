@@ -218,3 +218,8 @@ resource "aws_cloudwatch_event_target" "target" {
   target_id = "predictive-scaler-lambda"
   arn       = aws_lambda_function.predictive_scaler.arn
 }
+
+resource "aws_iam_role_policy_attachment" "lambda_ecr_read" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
