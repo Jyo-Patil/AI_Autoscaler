@@ -7,53 +7,39 @@ on:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-  ECR_REPOSITORY: predictive-autoscaler         # must match Terraform
-  IMAGE_TAG: latest                             # override if you want versioned tags
+  ECR_REPOSITORY: predictive-autoscaler   # must match Terraform
+  # IMAGE_TAG will be set dynamically from git SHA below
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      #################################################################
-      # 1. Checkout repository
-      #################################################################
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
-      #################################################################
-      # 2. Install Terraform
-      #################################################################
+      # ----------------------------------------------------------
+      # Install Terraform
+      # ----------------------------------------------------------
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: latest
 
-      #################################################################
-      # 3. Set up Python (optional; used for small zip + build tooling)
-      #################################################################
+      # ----------------------------------------------------------
+      # Install Python (optional; helpful for tooling/tests)
+      # ----------------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: '3.11'
 
-      #################################################################
-      # 4. OPTIONAL: Build small Lambda zip (kept for reference/testing)
-      #    NOTE: This zip is NOT used for deployment if you're using Docker.
-      #################################################################
-      - name: Install dependencies and package Lambda (zip, optional)
-        run: |
-          cd lambda
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -t .
-          zip -r ../lambda.zip .
-
-      - name: Verify Lambda package
-        run: ls -lh lambda.zip
-
-      #################################################################
-      # 5. Configure AWS credentials (so we can push to ECR, run Terraform)
-      #################################################################
+      # ----------------------------------------------------------
+      # Configure AWS credentials (OIDC is recommended, using secrets here)
+      # ----------------------------------------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -61,72 +47,80 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      #################################################################
-      # 6. Terraform Init
-      #################################################################
+      # ----------------------------------------------------------
+      # Terraform Init
+      # ----------------------------------------------------------
       - name: Terraform Init
-        run: terraform init
+        run: terraform init -input=false
         working-directory: terraform
 
-      #################################################################
-      # 7. Pre-create ECR repo (Terraform targeted apply)
-      #    Ensures repo exists BEFORE we build & push the Docker image.
-      #################################################################
+      # ----------------------------------------------------------
+      # Phase 1: create ECR repo so we can push image
+      # ----------------------------------------------------------
       - name: Terraform Apply (ECR only)
-        run: terraform destroy -auto-approve
+        run: terraform apply -auto-approve -input=false -target=aws_ecr_repository.predictive_repo
         working-directory: terraform
 
-      #################################################################
-      # 8. Get ECR repo URI from Terraform output
-      #################################################################
+      # ----------------------------------------------------------
+      # Capture ECR repo URI from Terraform output
+      # ----------------------------------------------------------
       - name: Get ECR Repo URL
         id: getecr
         run: |
-          terraform output -raw predictive_repo_url > ecr_url.txt
-          echo "repo_url=$(cat ecr_url.txt)" >> $GITHUB_OUTPUT
+          set -e
+          REPO_URL=$(terraform output -raw predictive_repo_url 2>/dev/null || true)
+          if [ -z "$REPO_URL" ]; then
+            echo "Terraform did not return predictive_repo_url. Exiting."
+            exit 1
+          fi
+          echo "repo_url=$REPO_URL" >> "$GITHUB_OUTPUT"
         working-directory: terraform
 
-      #################################################################
-      # 9. Login to Amazon ECR
-      #################################################################
+      # ----------------------------------------------------------
+      # Compute image tag (short commit SHA)
+      # ----------------------------------------------------------
+      - name: Set image tag
+        id: tag
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "IMAGE_TAG=$SHORT_SHA" >> $GITHUB_ENV
+          echo "image_tag=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      # ----------------------------------------------------------
+      # Login to Amazon ECR (Docker)
+      # ----------------------------------------------------------
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      #################################################################
-      # 10. Build & push Docker image for Lambda
-      #################################################################
-      - name: Build, tag, and push Lambda Docker image
+      # ----------------------------------------------------------
+      # Build & Push Docker Image for Lambda
+      # Expects Dockerfile + code in lambda_docker/
+      # ----------------------------------------------------------
+      - name: Build, tag, and push Lambda image
         env:
-          ECR_REPO: ${{ steps.getecr.outputs.repo_url }}
+          REPO_URL: ${{ steps.getecr.outputs.repo_url }}
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          cd lambda_docker
-          if [ -z "$ECR_REPO" ]; then
-            echo "ECR repo URL not found in Terraform output. Falling back to manual construction."
-            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-            ECR_REPO="$ACCOUNT_ID.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+          set -e
+          if [ -z "$REPO_URL" ]; then
+            echo "Missing REPO_URL"; exit 1
           fi
+          echo "Building image $REPO_URL:$IMAGE_TAG"
 
-          echo "Using ECR_REPO=$ECR_REPO"
+          docker build -t $REPO_URL:$IMAGE_TAG lambda_docker
+          docker push $REPO_URL:$IMAGE_TAG
 
-          # build image (context = lambda_docker/)
-
-          docker build -t $ECR_REPO:$IMAGE_TAG lambda_docker
-
-          # push image
-          docker push $ECR_REPO:$IMAGE_TAG
-
-      #################################################################
-      # 11. Full Terraform Plan (now repo + image exist)
-      #################################################################
+      # ----------------------------------------------------------
+      # Terraform Plan (full infra) using the pushed image tag
+      # ----------------------------------------------------------
       - name: Terraform Plan
-        run: terraform plan -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
+        run: terraform plan -input=false -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
         working-directory: terraform
 
-      #################################################################
-      # 12. Full Terraform Apply (deploy Lambda using container image)
-      #################################################################
+      # ----------------------------------------------------------
+      # Terraform Apply (full infra)
+      # ----------------------------------------------------------
       - name: Terraform Apply
-        run: terraform apply -auto-approve -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
+        run: terraform apply -auto-approve -input=false -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
         working-directory: terraform
