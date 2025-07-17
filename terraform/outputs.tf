@@ -6,11 +6,6 @@ output "asg_name" {
   value = aws_autoscaling_group.webapp_asg.name
 }
 
-output "predictive_repo_url" {
-  value       = aws_ecr_repository.predictive_repo.repository_url
-  description = "ECR repo URI for Lambda Docker image"
-}
-
 output "lambda_function_name" {
   value = aws_lambda_function.predictive_scaler.function_name
 }
