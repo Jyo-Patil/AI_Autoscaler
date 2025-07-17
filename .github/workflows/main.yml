@@ -73,7 +73,7 @@ jobs:
       #    Ensures repo exists BEFORE we build & push the Docker image.
       #################################################################
       - name: Terraform Apply (ECR only)
-        run: terraform apply -auto-approve
+        run: terraform destroy -auto-approve
         working-directory: terraform
 
       #################################################################
