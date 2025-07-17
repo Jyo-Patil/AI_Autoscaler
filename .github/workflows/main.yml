@@ -73,7 +73,7 @@ jobs:
       #    Ensures repo exists BEFORE we build & push the Docker image.
       #################################################################
       - name: Terraform Apply (ECR only)
-        run: terraform apply -auto-approve -target=aws_ecr_repository.predictive_repo
+        run: terraform apply -auto-approve
         working-directory: terraform
 
       #################################################################
