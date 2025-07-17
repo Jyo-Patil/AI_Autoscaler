@@ -58,69 +58,71 @@ jobs:
       # Phase 1: create ECR repo so we can push image
       # ----------------------------------------------------------
       - name: Terraform Apply (ECR only)
-        run: terraform apply -auto-approve -input=false -target=aws_ecr_repository.predictive_repo
+        run: terraform destroy -auto-approve -input=false -target=aws_ecr_repository.predictive_repo
         working-directory: terraform
 
       # ----------------------------------------------------------
       # Capture ECR repo URI from Terraform output
       # ----------------------------------------------------------
-      - name: Get ECR Repo URL
-        id: getecr
-        run: |
-          set -e
-          REPO_URL=$(terraform output -raw predictive_repo_url 2>/dev/null || true)
-          if [ -z "$REPO_URL" ]; then
-            echo "Terraform did not return predictive_repo_url. Exiting."
-            exit 1
-          fi
-          echo "repo_url=$REPO_URL" >> "$GITHUB_OUTPUT"
-        working-directory: terraform
+      # - name: Get ECR Repo URL
+      #   id: getecr
+      #   run: |
+      #     set -e
+      #     REPO_URL=$(terraform output -raw predictive_repo_url 2>/dev/null || true)
+      #     if [ -z "$REPO_URL" ]; then
+      #       echo "Terraform did not return predictive_repo_url. Exiting."
+      #       exit 1
+      #     fi
+      #     echo "repo_url=$REPO_URL" >> "$GITHUB_OUTPUT"
+      #   working-directory: terraform
 
-      # ----------------------------------------------------------
-      # Compute image tag (short commit SHA)
-      # ----------------------------------------------------------
-      - name: Set image tag
-        id: tag
-        run: |
-          SHORT_SHA=${GITHUB_SHA::7}
-          echo "IMAGE_TAG=$SHORT_SHA" >> $GITHUB_ENV
-          echo "image_tag=$SHORT_SHA" >> $GITHUB_OUTPUT
+      # # ----------------------------------------------------------
+      # # Compute image tag (short commit SHA)
+      # # ----------------------------------------------------------
+      # - name: Set image tag
+      #   id: tag
+      #   run: |
+      #     SHORT_SHA=${GITHUB_SHA::7}
+      #     echo "IMAGE_TAG=$SHORT_SHA" >> $GITHUB_ENV
+      #     echo "image_tag=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-      # ----------------------------------------------------------
-      # Login to Amazon ECR (Docker)
-      # ----------------------------------------------------------
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      # # ----------------------------------------------------------
+      # # Login to Amazon ECR (Docker)
+      # # ----------------------------------------------------------
+      # - name: Login to Amazon ECR
+      #   id: login-ecr
+      #   uses: aws-actions/amazon-ecr-login@v2
 
-      # ----------------------------------------------------------
-      # Build & Push Docker Image for Lambda
-      # Expects Dockerfile + code in lambda_docker/
-      # ----------------------------------------------------------
-      - name: Build, tag, and push Lambda image
-        env:
-          REPO_URL: ${{ steps.getecr.outputs.repo_url }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          set -e
-          if [ -z "$REPO_URL" ]; then
-            echo "Missing REPO_URL"; exit 1
-          fi
-          echo "Building image $REPO_URL:$IMAGE_TAG"
+      # # ----------------------------------------------------------
+      # # Build & Push Docker Image for Lambda
+      # # Expects Dockerfile + code in lambda_docker/
+      # # ----------------------------------------------------------
+      # - name: Build, tag, and push Lambda image
+      #   env:
+      #     REPO_URL: ${{ steps.getecr.outputs.repo_url }}
+      #     IMAGE_TAG: ${{ env.IMAGE_TAG }}
+      #   run: |
+      #     set -e
+      #     if [ -z "$REPO_URL" ]; then
+      #       echo "Missing REPO_URL"; exit 1
+      #     fi
+      #     echo "Building image $REPO_URL:$IMAGE_TAG"
 
-          docker build -t $REPO_URL:$IMAGE_TAG .
-          docker push $REPO_URL:$IMAGE_TAG
+      #     docker build -t $REPO_URL:$IMAGE_TAG .
+      #     docker push $REPO_URL:$IMAGE_TAG
 
       # ----------------------------------------------------------
       # Terraform Plan (full infra) using the pushed image tag
       # ----------------------------------------------------------
       - name: Terraform Plan
-        run: terraform plan -input=false -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
+        # run: terraform plan -input=false -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
+        run: terraform plan
         working-directory: terraform
 
       # ----------------------------------------------------------
       # Terraform Apply (full infra)
       # ----------------------------------------------------------
       - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
+        # run: terraform apply -auto-approve -input=false -var="lambda_image_tag=${{ env.IMAGE_TAG }}"
+        run: terraform destroy -auto-approve
         working-directory: terraform
