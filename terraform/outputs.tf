@@ -1,8 +1,16 @@
-output "lambda_function_name" {
-  value = aws_lambda_function.predictive_scaler.function_name
+output "public_subnet_id" {
+  value = aws_subnet.public_subnet.id
+}
+
+output "asg_name" {
+  value = aws_autoscaling_group.webapp_asg.name
 }
 
 output "predictive_repo_url" {
-  description = "The URI of the ECR repository for the Lambda image"
   value       = aws_ecr_repository.predictive_repo.repository_url
+  description = "ECR repo URI for Lambda Docker image"
+}
+
+output "lambda_function_name" {
+  value = aws_lambda_function.predictive_scaler.function_name
 }

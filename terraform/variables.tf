@@ -1,4 +1,7 @@
-
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
 
 variable "az" {
   type    = string
@@ -10,7 +13,7 @@ variable "instance_type" {
   default = "t2.micro"
 }
 
-# Tag (image tag in ECR) to deploy in Lambda
+# Tag used in your CI/CD workflow when you push Docker image.
 variable "lambda_image_tag" {
   type    = string
   default = "latest"
