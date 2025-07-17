@@ -1,6 +1,3 @@
-############################################
-# TERRAFORM + PROVIDER
-############################################
 terraform {
   required_providers {
     aws = {
@@ -11,36 +8,39 @@ terraform {
   required_version = ">= 1.0"
 }
 
-provider "aws" {
-  region = var.aws_region
-}
 
-
-############################################
-# NETWORKING (VPC + PUBLIC SUBNET)
-############################################
-
+# VPC
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
 
-  tags = { Name = "predictive-vpc" }
+  tags = {
+    Name = "predictive-vpc"
+  }
 }
 
+# Internet Gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
-  tags   = { Name = "predictive-igw" }
+
+  tags = {
+    Name = "predictive-igw"
+  }
 }
 
+# Public Subnet
 resource "aws_subnet" "public_subnet" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = var.az # make configurable
+  availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
 
-  tags = { Name = "predictive-public-subnet" }
+  tags = {
+    Name = "predictive-public-subnet"
+  }
 }
 
+# Route Table
 resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.main.id
 
@@ -49,19 +49,18 @@ resource "aws_route_table" "public_rt" {
     gateway_id = aws_internet_gateway.igw.id
   }
 
-  tags = { Name = "predictive-public-rt" }
+  tags = {
+    Name = "predictive-public-rt"
+  }
 }
 
+# Associate Subnet with Route Table
 resource "aws_route_table_association" "public_rt_assoc" {
   subnet_id      = aws_subnet.public_subnet.id
   route_table_id = aws_route_table.public_rt.id
 }
 
-
-############################################
-# EC2 LAUNCH TEMPLATE + ASG
-############################################
-
+# Amazon Linux 2 AMI
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -72,15 +71,16 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
+# Launch Template
 resource "aws_launch_template" "webapp_lt" {
   name_prefix   = "webapp-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
 
-  user_data = base64encode(<<-EOF
+  user_data = base64encode(<<EOF
     #!/bin/bash
     yum update -y
-    yum install -y httpd stress
+    yum install -y httpd
     systemctl start httpd
     systemctl enable httpd
     echo "Hello from Predictive Auto-Scaler" > /var/www/html/index.html
@@ -88,6 +88,7 @@ resource "aws_launch_template" "webapp_lt" {
   )
 }
 
+# Auto Scaling Group
 resource "aws_autoscaling_group" "webapp_asg" {
   name                      = "predictive-asg"
   desired_capacity          = 1
@@ -109,10 +110,11 @@ resource "aws_autoscaling_group" "webapp_asg" {
   }
 }
 
-
-############################################
-# IAM FOR LAMBDA
-############################################
+# IAM Role for Lambda
+resource "aws_iam_role" "lambda_role" {
+  name = "predictive-scaler-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
+}
 
 data "aws_iam_policy_document" "lambda_trust" {
   statement {
@@ -124,81 +126,78 @@ data "aws_iam_policy_document" "lambda_trust" {
   }
 }
 
-resource "aws_iam_role" "lambda_role" {
-  name               = "predictive-scaler-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
-}
-
-# Logging to CloudWatch
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Allow scaling ASG
 resource "aws_iam_role_policy_attachment" "lambda_asg" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/AutoScalingFullAccess"
 }
 
-# Read metrics from CloudWatch
 resource "aws_iam_role_policy_attachment" "lambda_cloudwatch" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess"
 }
 
-
-############################################
-# ECR REPOSITORY FOR LAMBDA IMAGE
-############################################
-
-resource "aws_ecr_repository" "predictive_repo" {
-  name = "predictive-autoscaler"
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  tags = { Name = "predictive-autoscaler-repo" }
-}
-
-
-############################################
-# LAMBDA (CONTAINER IMAGE)
-############################################
-
-# NOTE: You must push an image (tag: latest by default) before apply succeeds,
-# or apply once to create infra, push the image, then 'terraform apply' again.
-
-resource "aws_lambda_function" "predictive_scaler" {
-  function_name = "predictive_scaler"
-  role          = aws_iam_role.lambda_role.arn
-  package_type  = "Image"
-
-  # default to latest tag; override via var if needed
-  image_uri = "${aws_ecr_repository.predictive_repo.repository_url}:${var.lambda_image_tag}"
-
-  timeout = 60
-
-  environment {
-    variables = {
-      ASG_NAME = aws_autoscaling_group.webapp_asg.name
-      AWS_REGION = var.aws_region
-    }
-  }
-}
-
-
-############################################
-# EVENTBRIDGE SCHEDULE → LAMBDA
-############################################
-
+# EventBridge Rule
 resource "aws_cloudwatch_event_rule" "ten_minute_schedule" {
   name                = "predictive-scaler-schedule"
   schedule_expression = "rate(10 minutes)"
 }
 
+# resource "aws_s3_bucket" "lambda_bucket" {
+#   bucket = "your-unique-lambda-code-bucket"
+#   force_destroy = true
+# }
+
+# resource "aws_s3_object" "lambda_zip" {
+#   bucket = aws_s3_bucket.lambda_bucket.id
+#   key    = "lambda.zip"
+#   source = "${path.module}/../lambda.zip"
+#   etag   = filemd5("${path.module}/../lambda.zip")
+# }
+
+
+
+resource "aws_lambda_function" "predictive_scaler" {
+  function_name = "predictive_scaler"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "predictive_scaler.lambda_handler"
+  runtime       = "python3.10"
+  timeout       = 60
+
+  s3_bucket = aws_s3_bucket.lambda_bucket.id
+  s3_key    = aws_s3_object.lambda_zip.key
+
+  source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
+
+  environment {
+    variables = {
+      ASG_NAME = aws_autoscaling_group.webapp_asg.name
+    }
+  }
+}
+
+
+# Lambda Function
+/*resource "aws_lambda_function" "predictive_scaler" {
+  function_name    = "predictive_scaler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "predictive_scaler.lambda_handler"
+  runtime          = "python3.10"
+  timeout          = 60
+  source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
+  filename         = "${path.module}/../lambda.zip"
+  environment {
+    variables = {
+      ASG_NAME = aws_autoscaling_group.webapp_asg.name
+    }
+  }
+}*/
+
+# Lambda Permissions
 resource "aws_lambda_permission" "allow_eventbridge" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
@@ -207,8 +206,10 @@ resource "aws_lambda_permission" "allow_eventbridge" {
   source_arn    = aws_cloudwatch_event_rule.ten_minute_schedule.arn
 }
 
+# EventBridge → Lambda target
 resource "aws_cloudwatch_event_target" "target" {
   rule      = aws_cloudwatch_event_rule.ten_minute_schedule.name
   target_id = "predictive-scaler-lambda"
   arn       = aws_lambda_function.predictive_scaler.arn
 }
+
