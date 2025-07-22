@@ -1,22 +1,24 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Install system build dependencies needed for Prophet and pandas
-RUN yum install -y gcc gcc-c++ make python3-devel && \
+# Enable gcc9 from Amazon Linux Extras and set it as default gcc
+RUN yum install -y amazon-linux-extras && \
+    amazon-linux-extras enable gcc9 && \
+    yum clean metadata && \
+    yum install -y gcc9 gcc9-c++ && \
+    alternatives --install /usr/bin/gcc gcc /usr/bin/gcc9 90 && \
+    alternatives --install /usr/bin/g++ g++ /usr/bin/g++9 90 && \
+    yum install -y make python3-devel && \
     yum clean all
 
-# Copy requirements file
-COPY requirements.txt .
-
-# Upgrade pip and setuptools for compatibility
+# Upgrade pip and setuptools for build compatibility
 RUN pip install --upgrade pip setuptools wheel
 
-# Install python dependencies from requirements.txt
+COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your lambda function code
 COPY . ${LAMBDA_TASK_ROOT}
 
-# Set the CMD to your handler
 CMD ["predictive_scaler.lambda_handler"]
 
 
