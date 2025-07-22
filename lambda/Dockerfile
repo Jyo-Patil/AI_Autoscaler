@@ -1,6 +1,11 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Copy requirements and install Python dependencies
+# Install gcc and python3-devel for building packages like numpy
+RUN yum update -y && \
+    yum install -y gcc gcc-c++ python3-devel && \
+    yum clean all
+
+# Copy requirements.txt and install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
@@ -8,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy your lambda function code
 COPY . ${LAMBDA_TASK_ROOT}
 
-# Set the CMD to your handler (change if your handler is different)
+# Set the CMD to your handler
 CMD ["predictive_scaler.lambda_handler"]
 
 
