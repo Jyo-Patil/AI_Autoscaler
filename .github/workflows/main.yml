@@ -1,54 +1,169 @@
-name: deploy
+name: Deploy Predictive Scaler Lambda
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1                 # <-- change to your region
+  ECR_REPO: predictive-lambda           # <-- change to your ECR repo name
+  TF_WORKING_DIR: terraform             # path to your Terraform directory
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Terraform
+      # --- AWS credentials (static secrets). For OIDC, see commented block below. ---
+      - name: Configure AWS credentials
+        id: aws-creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # # Preferred: Assume an IAM role with GitHub OIDC (no long-lived secrets)
+      # - name: Configure AWS credentials (OIDC)
+      #   if: false   # flip to true and remove static creds step when ready
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
+      #     aws-region:     ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # - name: Ensure ECR repository exists
+      #   shell: bash
+      #   run: |
+      #     if ! aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+      #       aws ecr create-repository --repository-name "${ECR_REPO}" --image-scanning-configuration scanOnPush=true --region "${AWS_REGION}"
+      #     fi
+
+      - name: Build Docker image
+        id: build-image
+        shell: bash
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_SHA="${{ github.sha }}"
+          IMAGE_URI_SHA="${REGISTRY}/${ECR_REPO}:${IMAGE_SHA}"
+          IMAGE_URI_LATEST="${REGISTRY}/${ECR_REPO}:latest"
+
+          echo "Building image: ${IMAGE_URI_SHA}"
+          docker build -t "${IMAGE_URI_SHA}" ./lambda
+
+          echo "Tagging latest: ${IMAGE_URI_LATEST}"
+          docker tag "${IMAGE_URI_SHA}" "${IMAGE_URI_LATEST}"
+
+          echo "IMAGE_URI_SHA=${IMAGE_URI_SHA}"       >> $GITHUB_OUTPUT
+          echo "IMAGE_URI_LATEST=${IMAGE_URI_LATEST}" >> $GITHUB_OUTPUT
+
+      - name: Push Docker image
+        id: push-image
+        shell: bash
+        run: |
+          docker push "${{ steps.build-image.outputs.IMAGE_URI_SHA }}"
+          docker push "${{ steps.build-image.outputs.IMAGE_URI_LATEST }}"
+
+      - name: Get image digest
+        id: image-digest
+        shell: bash
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_SHA="${{ github.sha }}"
+          # Query the image details by the SHA tag we just pushed
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "${ECR_REPO}" \
+            --image-ids imageTag="${IMAGE_SHA}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text \
+            --region "${AWS_REGION}")
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
+            echo "Failed to retrieve image digest" >&2
+            exit 1
+          fi
+          IMAGE_DIGEST_URI="${REGISTRY}/${ECR_REPO}@${DIGEST}"
+          echo "Resolved immutable image URI: ${IMAGE_DIGEST_URI}"
+          echo "IMAGE_DIGEST_URI=${IMAGE_DIGEST_URI}" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-         terraform_version: latest 
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Package Lambda
-        run: |
-          cd lambda
-          zip -9 -r ../lambda.zip .
-          
+          terraform_version: latest
 
       - name: Terraform Init
-        run: terraform init
         working-directory: terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform init -input=false
 
       - name: Terraform Plan
-        run: terraform plan
         working-directory: terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}    
+        run: terraform plan -input=false -var="lambda_image_uri=${{ steps.image-digest.outputs.IMAGE_DIGEST_URI }}"
 
       - name: Terraform Apply
-        run: terraform destroy -auto-approve
+        if: github.ref == 'refs/heads/main'
         working-directory: terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform apply -auto-approve -input=false -var="lambda_image_uri=${{ steps.image-digest.outputs.IMAGE_DIGEST_URI }}"
+
+
+
+
+
+# name: deploy
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Install Terraform
+#         uses: hashicorp/setup-terraform@v3
+#         with:
+#          terraform_version: latest 
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: 3.11
+
+#       - name: Install dependencies
+#         run: |
+#           pip install -r requirements.txt
+
+#       - name: Package Lambda
+#         run: |
+#           cd lambda
+#           zip -9 -r ../lambda.zip .
+          
+
+#       - name: Terraform Init
+#         run: terraform init
+#         working-directory: terraform
+#         env:
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+#       - name: Terraform Plan
+#         run: terraform plan
+#         working-directory: terraform
+#         env:
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}    
+
+#       - name: Terraform Apply
+#         run: terraform destroy -auto-approve
+#         working-directory: terraform
+#         env:
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

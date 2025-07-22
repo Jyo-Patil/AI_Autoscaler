@@ -1,20 +1,14 @@
 variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
-variable "az" {
-  type    = string
-  default = "us-east-1a"
+  description = "AWS region"
+  default     = "us-east-1"
 }
 
 variable "instance_type" {
-  type    = string
-  default = "t2.micro"
+  description = "EC2 instance type for Auto Scaling Group"
+  default     = "t2.micro"
 }
 
-# Tag used in your CI/CD workflow when you push Docker image.
-variable "lambda_image_tag" {
-  type    = string
-  default = "latest"
+variable "lambda_image_uri" {
+  description = "ECR image URI for Lambda"
+  type        = string
 }
