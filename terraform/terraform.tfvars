@@ -1,1 +1,1 @@
-lambda_image_uri = "929897439921.dkr.ecr.us-east-1.amazonaws.com/testasg"
+lambda_image_uri = "929897439921.dkr.ecr.us-east-1.amazonaws.com/predictive-lambda:latest"
