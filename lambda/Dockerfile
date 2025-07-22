@@ -1,16 +1,21 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Enable gcc9 from Amazon Linux Extras and set it as default gcc
-RUN yum install -y amazon-linux-extras && \
-    amazon-linux-extras enable gcc9 && \
-    yum clean metadata && \
-    yum install -y gcc9 gcc9-c++ && \
-    alternatives --install /usr/bin/gcc gcc /usr/bin/gcc9 90 && \
-    alternatives --install /usr/bin/g++ g++ /usr/bin/g++9 90 && \
-    yum install -y make python3-devel && \
-    yum clean all
+# Run yum commands in shell properly
+RUN yum install -y amazon-linux-extras
 
-# Upgrade pip and setuptools for build compatibility
+RUN amazon-linux-extras enable gcc9
+
+RUN yum clean metadata
+
+RUN yum install -y gcc9 gcc9-c++ make python3-devel
+
+RUN alternatives --install /usr/bin/gcc gcc /usr/bin/gcc9 90
+
+RUN alternatives --install /usr/bin/g++ g++ /usr/bin/g++9 90
+
+RUN yum clean all
+
+# Upgrade pip etc.
 RUN pip install --upgrade pip setuptools wheel
 
 COPY requirements.txt .
