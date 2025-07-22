@@ -1,7 +1,7 @@
 import boto3
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 ASG_NAME = os.environ.get("ASG_NAME", "predictive-asg")
 
