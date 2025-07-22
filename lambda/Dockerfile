@@ -1,16 +1,24 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Install build dependencies
-RUN yum install -y gcc gcc-c++ make
+# Install system build dependencies needed for Prophet and pandas
+RUN yum install -y gcc gcc-c++ make python3-devel && \
+    yum clean all
 
-# Install dependencies
+# Copy requirements file
 COPY requirements.txt .
+
+# Upgrade pip and setuptools for compatibility
+RUN pip install --upgrade pip setuptools wheel
+
+# Install python dependencies from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy function code
+# Copy the rest of your lambda function code
 COPY . ${LAMBDA_TASK_ROOT}
 
+# Set the CMD to your handler
 CMD ["predictive_scaler.lambda_handler"]
+
 
 
 
