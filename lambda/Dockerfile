@@ -1,30 +1,33 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Run yum commands in shell properly
-RUN yum install -y amazon-linux-extras
+# Install bash (optional, for better shell support)
+RUN yum install -y bash && yum clean all
 
-RUN amazon-linux-extras enable gcc9
+# Use bash shell for following RUN commands
+SHELL ["/bin/bash", "-c"]
 
-RUN yum clean metadata
+# Install gcc9 and related tools from amazon-linux-extras
+RUN yum install -y amazon-linux-extras && \
+    amazon-linux-extras enable gcc9 && \
+    yum clean metadata && \
+    yum install -y gcc9 gcc9-c++ make python3-devel && \
+    alternatives --install /usr/bin/gcc gcc /usr/bin/gcc9 90 && \
+    alternatives --install /usr/bin/g++ g++ /usr/bin/g++9 90 && \
+    yum clean all
 
-RUN yum install -y gcc9 gcc9-c++ make python3-devel
-
-RUN alternatives --install /usr/bin/gcc gcc /usr/bin/gcc9 90
-
-RUN alternatives --install /usr/bin/g++ g++ /usr/bin/g++9 90
-
-RUN yum clean all
-
-# Upgrade pip etc.
+# Upgrade pip and wheel before installing dependencies
 RUN pip install --upgrade pip setuptools wheel
 
+# Copy requirements file and install Python dependencies
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the rest of your Lambda function code
 COPY . ${LAMBDA_TASK_ROOT}
 
+# Set the CMD to your handler
 CMD ["predictive_scaler.lambda_handler"]
+
 
 
 
