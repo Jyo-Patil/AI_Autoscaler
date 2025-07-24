@@ -107,7 +107,7 @@ jobs:
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
         working-directory: terraform
-        run: terraform Apply -auto-approve -input=false -var="lambda_image_uri=${{ steps.image-digest.outputs.IMAGE_DIGEST_URI }}"
+        run: terraform apply -auto-approve -input=false -var="lambda_image_uri=${{ steps.image-digest.outputs.IMAGE_DIGEST_URI }}"
 
 
 
