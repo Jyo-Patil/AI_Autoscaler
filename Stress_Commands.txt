@@ -1,0 +1,18 @@
+# Install build tools
+sudo yum groupinstall "Development Tools" -y
+sudo yum install git -y
+
+# Clone stress-ng source
+git clone https://github.com/ColinIanKing/stress-ng.git
+cd stress-ng
+
+# Build
+make
+
+# Install
+sudo make install
+
+
+stress-ng --cpu 2 --timeout 300
+
+Wait for 5 mins
