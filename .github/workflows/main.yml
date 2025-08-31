@@ -2,7 +2,7 @@ name: Deploy Predictive Scaler Lambda
 
 on:
   push:
-    branches: [ main ]
+    branches: [ test ]
   workflow_dispatch:
 
 env:
@@ -105,7 +105,7 @@ jobs:
         run: terraform plan -input=false -var="lambda_image_uri=${{ steps.image-digest.outputs.IMAGE_DIGEST_URI }}"
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/test'
         working-directory: terraform
         run: terraform destroy -auto-approve -input=false -var="lambda_image_uri=${{ steps.image-digest.outputs.IMAGE_DIGEST_URI }}"
 
